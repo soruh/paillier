@@ -34,12 +34,12 @@ struct Args {
 fn send(
     addr: SocketAddr,
     encryption_key: &EncryptionKey,
-    cyphertext: &BigInt,
+    cyphertext: &RawCiphertext,
 ) -> anyhow::Result<()> {
     println!("connecting to {addr:?}");
     let mut socket = TcpStream::connect(addr)?;
 
-    let encoded_cyphertext = cyphertext.to_str_radix(16);
+    let encoded_cyphertext = cyphertext.0.to_str_radix(16);
 
     socket.write_all(&(encoded_cyphertext.len() as u64).to_le_bytes())?;
     socket.write_all(encoded_cyphertext.as_bytes())?;
@@ -48,7 +48,7 @@ fn send(
     Ok(())
 }
 
-fn recv(addr: SocketAddr) -> anyhow::Result<(EncryptionKey, BigInt)> {
+fn recv(addr: SocketAddr) -> anyhow::Result<(EncryptionKey, RawCiphertext<'static>)> {
     println!("listening on {addr:?}");
     let (mut socket, remote_addr) = TcpListener::bind(addr)?.accept()?;
     println!("connection from {remote_addr:?}");
@@ -64,7 +64,7 @@ fn recv(addr: SocketAddr) -> anyhow::Result<(EncryptionKey, BigInt)> {
 
     let ek: EncryptionKey = serde_json::from_reader(socket)?;
 
-    Ok((ek, cyphertext))
+    Ok((ek, RawCiphertext::from(cyphertext)))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -79,11 +79,10 @@ fn main() -> anyhow::Result<()> {
         let plaintext = RawPlaintext::from(args.add.clone() * &args.mul);
         let cyphertext = Paillier::encrypt(&ek, plaintext);
 
-        send(args.next, &ek, &cyphertext.0)?;
+        send(args.next, &ek, &cyphertext)?;
     }
 
     let (ek, cyphertext) = recv(args.bind)?;
-    let cyphertext = RawCiphertext::from(cyphertext);
 
     if let Some(dk) = decryption_key {
         assert!(args.master);
@@ -98,7 +97,7 @@ fn main() -> anyhow::Result<()> {
         let cyphertext = Paillier::add(&ek, cyphertext, add);
         let cyphertext = Paillier::mul(&ek, cyphertext, mul);
 
-        send(args.next, &ek, &cyphertext.0)?;
+        send(args.next, &ek, &cyphertext)?;
     }
 
     Ok(())
